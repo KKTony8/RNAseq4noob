@@ -1,84 +1,114 @@
-17:20 2025/7/12
-下游常规分析流程
-细胞聚类
+17:20 2025/7/12 wky
 
-方法：t‑SNE / UMAP
+# 下游常规分析流程
 
-目的：将高维表达数据投射到 2D/3D 空间，直观展示细胞群体结构
+## 1. 细胞聚类  
+```r
+# 使用 Seurat 举例
+sce <- RunPCA(sce, features = VariableFeatures(sce))
+sce <- RunUMAP(sce, dims = 1:20)           # 或 RunTSNE()
+DimPlot(sce, reduction = "umap", label = TRUE)
+```
 
-聚类结果注释
+## 2. 聚类结果注释  
+```r
+# 找 marker genes
+markers <- FindAllMarkers(sce, only.pos = TRUE, min.pct = 0.25)
+# 查看常见标记
+library(dplyr)
+markers %>%
+  filter(gene %in% c("CD3E", "MS4A1")) %>%
+  arrange(cluster, desc(avg_log2FC))
+# 根据 marker 列表给每个 cluster 命名
+new.labels <- c("0"="T cell", "1"="B cell", "2"="Myeloid", "3"="NK cell")
+sce$celltype <- plyr::mapvalues(sce$seurat_clusters,
+                                from = names(new.labels),
+                                to   = new.labels)
+DimPlot(sce, group.by = "celltype", label = TRUE)
+```
 
-筛选各 cluster 的 Marker Gene（差异表达基因）
+## 3. 功能富集分析  
 
-常见标记：
+### 3.1 差异表达分析  
+```r
+# 以 cluster 0 vs 1 为例
+deg <- FindMarkers(sce, ident.1 = 0, ident.2 = 1)
+```
 
-CD3E → T 细胞
+### 3.2 GO/KEGG 富集  
+```r
+library(clusterProfiler)
+ego <- enrichGO(gene          = rownames(deg)[deg$p_val_adj < 0.05],
+                OrgDb         = org.Hs.eg.db,
+                ont           = "BP",
+                pAdjustMethod = "BH")
+dotplot(ego)
+```
 
-MS4A1 → B 细胞
+### 3.3 GSEA  
+```r
+library(clusterProfiler)
+geneList   <- deg$avg_log2FC
+names(geneList) <- rownames(deg)
+gsea.res   <- GSEA(geneList, TERM2GENE = kegg_sets)
+gseaplot2(gsea.res, geneSetID = "hsa04010")
+```
 
-…
+### 3.4 GSVA  
+```r
+library(GSVA)
+expr       <- as.matrix(GetAssayData(sce, slot = "data"))
+gsva.score <- gsva(expr, kegg_sets, method = "gsva")
+pheatmap(gsva.score)
+```
 
-根据已知 marker gene 列表，注释细胞亚群
+### 3.5 代谢通路推断  
+```r
+# 使用 scMetabolism 举例
+library(scMetabolism)
+met.res <- sc_metabolism(expr, method = "VISION")
+```
 
-功能富集分析
+## 4. 伪时序分析  
+```r
+library(monocle3)
+cds <- new_cell_data_set(expr,
+                         cell_metadata = sce@meta.data,
+                         gene_metadata = rowData(sce))
+cds <- preprocess_cds(cds)
+cds <- learn_graph(cds)
+plot_cells(cds, color_cells_by = "pseudotime")
+```
 
-差异表达分析
+## 5. 细胞–细胞通讯  
+```r
+library(CellChat)
+cellchat <- createCellChat(object = sce, group.by = "celltype")
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- computeCommunProb(cellchat)
+netVisual_circle(cellchat@net$weight)
+```
 
-选取感兴趣的对比组或 cluster
+## 6. VDJ 分析  
 
-得到 DEG（Differentially Expressed Genes）
+### 6.1 克隆型分析  
+```r
+library(scRepertoire)
+contig     <- read.csv("vdj_contig.csv")
+clonotype  <- combineTCR(contig, samples = "sample1")
+clonalHomeostasis(clonotype)
+```
 
-GO/KEGG 富集
+### 6.2 V/D/J 片段使用  
+```r
+usage <- segmentUsage(contig, chain = "TRB")
+with(usage, barplot(frequency ~ segment, las = 2))
+```
 
-输入 DEG 列表
-
-输出显著富集的生物过程 / 通路
-
-GSEA（Gene Set Enrichment Analysis）
-
-对全基因表达排序（按 fold change 或统计量）
-
-分析通路在基因集矩阵中的整体激活趋势
-
-GSVA（Gene Set Variation Analysis）
-
-在细胞 / 样本水平对通路活性打分
-
-代谢通路推断
-
-使用专门针对代谢途径的基因集或工具（如 scMetabolism）
-
-伪时序分析
-
-常用工具：Monocle、Slingshot、PAGA（Scanpy）
-
-目的：重现细胞状态转变路径
-
-例如：干细胞 → 中间状态 → 分化细胞
-
-细胞–细胞通讯分析
-
-预测不同 cell cluster 之间的信号通路互作
-
-常用工具：CellPhoneDB、CellChat、NATMI 等
-
-VDJ（TCR/BCR）分析
-
-克隆型分析
-
-统计每个样本中的所有 clonotype
-
-按细胞数或 UMI 数从高到低排序
-
-识别哪些样本或哪些细胞亚群富集特定 clonotype
-
-VDJ 基因片段使用
-
-分析 V、D、J 各片段在样本／亚群中的过度使用情况
-
-CDR3 长度多样性
-
-比较不同 CDR3 长度分布
-
-评估对亲和力和特异性的潜在影响
-
+### 6.3 CDR3 长度多样性  
+```r
+diversity <- alphaDiversity(clonotype,
+                            group  = "celltype",
+                            method = "shannon")
+boxplot(diversity ~ celltype, data = diversity)
+```
