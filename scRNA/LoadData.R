@@ -49,7 +49,7 @@ scRNAlist <- lapply(samples, function(pro) {
   cat("正在读取：", pro, "\n")
   folder <- file.path(data_dir, pro)
   counts <- Read10X(data.dir = folder, gene.column = 2)
-  sce <- CreateSeuratObject(counts, project = pro, min.cells = 3)
+  sce <- CreateSeuratObject(counts, project = pro, min.cells = 3,min.features = 300)
   return(sce)
 })
 names(scRNAlist) <- samples
@@ -57,7 +57,7 @@ names(scRNAlist) <- samples
 # Step 3: 合并所有样本
 sce.all <- merge(scRNAlist[[1]], y = scRNAlist[-1], add.cell.ids = samples)
 sce.all <- JoinLayers(sce.all)
-
+sce.all
 # Step 4: 检查数据和保存
 table(sce.all$orig.ident)
 head(sce.all@meta.data, 10)
