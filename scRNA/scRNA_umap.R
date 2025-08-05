@@ -62,17 +62,7 @@ plot1+plot2
 # 过滤具有2500或少于200的独特特征计数的单元格，过滤线粒体计数>5%的细胞
 pbmc<-subset(pbmc,subset=nFeature_RNA>200 & nFeature_RNA<2500 & percent.mt<5)
 
-# 3. 计算在数据集中表现出高细胞间变异的特征子集
-# 识别高度可变的特征（特征选择）
-pbmc<-FindVariableFeatures(pbmc,selection.method = "vst",nfeatures = 2000)
-# 确定高表达的前十个基因
-top10<-head(VariableFeatures(pbmc),10)
-# 画高变基因散点图
-plot1 <- VariableFeaturePlot(pbmc)
-plot1
-# 添加标签，避免标签重叠和警告
-plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE, xnudge = 0, ynudge = 0)
-plot2
+
 #——----------------------------------------------------------------
 # 3. 数据标准化####
 #——----------------------------------------------------------------
@@ -80,11 +70,21 @@ plot2
 # 等价pbmc <- NormalizeData(pbmc, normalization.method = "LogNormalize", scale.factor = 10000)
 # 原始表达 = 200, 细胞总 UMI = 20000, scale.factor = 10000,
 # 归一化值 = (200 / 20000) * 10000 = 100, LogNormalize = log1p(100) ≈ 4.615
-
 pbmc <- NormalizeData(pbmc)
+
 #——----------------------------------------------------------------
 # 4. PCA####
 #——----------------------------------------------------------------
+# 计算在数据集中表现出高细胞间变异的特征子集，识别高度可变的特征（特征选择）
+pbmc<-FindVariableFeatures(pbmc,selection.method = "vst",nfeatures = 2000)
+# 确定高表达的前十个基因
+top10<-head(VariableFeatures(pbmc),10)
+# 画高变基因散点图
+plot1 <- VariableFeaturePlot(pbmc)
+plot1
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE, xnudge = 0, ynudge = 0)
+plot2
+
 # 缩放数据,因为PCA对数据敏感，把数据均值变成0，方差变成1
 all.genes<-rownames(pbmc)
 pbmc<-ScaleData(pbmc,features = all.genes)
@@ -104,12 +104,12 @@ pbmc[['pca']]@cell.embeddings[1:5,1:2]
 DimHeatmap(pbmc,dims = 1,cells = 500,balanced = TRUE)
 # 前15个主成分（PC1 ~ PC15） 
 DimHeatmap(pbmc,dims = 1:15,cells=500,balanced = TRUE)
-
 # 自动判断保留前多少个主成分（PC）用于聚类、UMAP 是合理的，确定数据集的维度。
 pbmc<-JackStraw(pbmc,num.replicate = 100)
 pbmc<-ScoreJackStraw(pbmc,dims = 1:20)
 # 可视化处理
 JackStrawPlot(pbmc,dims = 1:15)
+
 ElbowPlot(pbmc)
 # 以上就是为了选择保留多少主成分分析，千万不要用太少（比如只用 5 个 PC）
 # 会显著削弱聚类和分群的效果；宁愿选多一点 也别选太少（这是最安全的做法）。
@@ -123,6 +123,7 @@ pbmc<-FindNeighbors(pbmc,dims = 1:10)
 # 看看后续UMAP聚类以及marker分布是否合理
 pbmc<-FindClusters(pbmc,resolution = 0.5)
 head(Idents(pbmc),5)
+
 #——----------------------------------------------------------------
 # 6. 运行非线性降维（UMAP/tSNE）####
 #——----------------------------------------------------------------
@@ -150,6 +151,7 @@ pbmc.markers<-FindAllMarkers(pbmc,only.pos = TRUE,min.pct = 0.25,logfc.threshold
 pbmc.markers %>%
   group_by(cluster) %>%
   slice_max(n=2,order_by = avg_log2FC)
+
 #——----------------------------------------------------------------
 # 8.可视化差异基因的办法主要是五种
 #——----------------------------------------------------------------
@@ -221,3 +223,4 @@ Idents(sce.all) <- sce.all$celltype
 
 # 保存了一个 R 对象的快照”
 saveRDS(pbmc,file = "./pbmc3k_final.rds")
+
