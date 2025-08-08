@@ -112,3 +112,4 @@ diversity <- alphaDiversity(clonotype,
                             method = "shannon")
 boxplot(diversity ~ celltype, data = diversity)
 ```
+
